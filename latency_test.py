@@ -28,15 +28,22 @@ sd.default.device = MIC_DEVICE
 
 
 def generate_tts(text, output_path):
-    headers = {"Authorization": f"Bearer {API_KEY}"}
-    payload = {"model": MODEL_TTS, "voice": "alloy", "input": text}
+    """
+    Generuje TTS — staramy się wymusić język polski poprzez nagłówki i pola payloadu.
+    Jeśli endpoint nie obsługuje pola 'language', kluczowe jest aby 'text' był po polsku.
+    """
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Accept-Language": "pl-PL"
+    }
+    payload = {"model": MODEL_TTS, "voice": "alloy", "language": "pl-PL", "input": text}
     response = requests.post("https://api.openai.com/v1/audio/speech", headers=headers, json=payload)
     if response.status_code == 200:
         with open(output_path, "wb") as f:
             f.write(response.content)
         print(f"Audio TTS zapisane w {output_path}")
     else:
-        print("Błąd TTS:", response.text)
+        print("Błąd TTS:", response.status_code, response.text)
 
 
 async def audio_to_audio():
@@ -45,16 +52,25 @@ async def audio_to_audio():
             URL_REALTIME,
             additional_headers={
                 "Authorization": f"Bearer {API_KEY}",
-                "OpenAI-Beta": "realtime=v1"
+                "OpenAI-Beta": "realtime=v1",
+                "Accept-Language": "pl-PL"
             }
     ) as ws:
         print("Tworzenie odpowiedzi...")
+
+        # Wyraźne instrukcje systemowe — wymuszamy PL
+        instructions_pl = (
+            "Jesteś asystentem. ODPOWIADAJ WYŁĄCZNIE PO POLSKU. "
+            "Nawet jeśli użytkownik użyje innego języka, zawsze odpowiadaj po polsku. "
+            "Nie dodawaj wstępu ani komentarzy. Odpowiadaj krótko i konkretnie oraz podawaj tylko to, o co prosi użytkownik."
+        )
+
         await ws.send(json.dumps({
             "type": "response.create",
             "response": {
                 "modalities": ["text", "audio"],
                 "audio": {"voice": "nova", "output_format": "mp3"},
-                "instructions": "Jesteś asystentem. Odpowiadaj wyłącznie na polecenia użytkownika Nie dodawaj wstępu ani komentarzy. Podawaj dokładnie to, o co prosi użytkownik I odpowiadaj w języku którym dostajesz informacje"
+                "instructions": instructions_pl
             }
         }))
 
@@ -100,7 +116,10 @@ async def audio_to_audio():
                 break
 
         if full_text_response:
+            # Dodatkowo: można tu wrzucić detekcję języka (langdetect) i automatyczne tłumaczenie do PL,
+            # gdyby model mimo wszystko odpowiedział w innym języku.
             generate_tts(full_text_response, OUTPUT_FILE)
 
 
-asyncio.run(audio_to_audio())
+if __name__ == "__main__":
+    asyncio.run(audio_to_audio())
