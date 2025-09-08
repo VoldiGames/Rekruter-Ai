@@ -30,7 +30,7 @@ def record_audio():
                     rate=RATE,
                     input=True,
                     frames_per_buffer=CHUNK)
-    print("Nagrywanie... Naciśnij Ctrl+C aby zatrzymać")
+    print("🎤 Nagrywanie... Naciśnij Ctrl+C aby zatrzymać")
 
     try:
         while not stop_event.is_set():
@@ -54,7 +54,7 @@ async def send_audio(websocket):
         try:
             await websocket.send(json.dumps(message))
         except Exception as e:
-            print("Błąd wysyłania audio:", e)
+            print("❌ Błąd wysyłania audio:", e)
 
 
 # Buforowanie audio przed odtwarzaniem
@@ -87,10 +87,21 @@ def play_audio(audio_data):
 
 
 async def openai_realtime():
+    # Wczytanie oferty pracy z pliku
+    try:
+        with open("oferta.txt", "r", encoding="utf-8") as f:
+            oferta_pracy = f.read().strip()
+    except FileNotFoundError:
+        print("❌ Brak pliku oferta.txt – utwórz go i wklej ofertę pracy.")
+        return
+
     instructions_pl = (
-        "Jesteś asystentem. ODPOWIADAJ WYŁĄCZNIE PO POLSKU. "
-        "Nigdy nie zmieniaj języka — zawsze odpowiedz po polsku. "
-        "Nie dodawaj wstępu ani komentarzy. Odpowiadaj krótko i konkretnie."
+        "Jesteś rekruterem prowadzącym rozmowę kwalifikacyjną. "
+        "Rozmowa ma dotyczyć WYŁĄCZNIE poniższej oferty pracy. "
+        "Nie wolno Ci odpowiadać na pytania niezwiązane z tą ofertą. "
+        "Jeśli użytkownik pyta o coś innego, powiedz krótko: "
+        "'Odpowiadam tylko na pytania dotyczące tej oferty pracy.'\n\n"
+        f"OFERTA PRACY:\n{oferta_pracy}"
     )
 
     async with websockets.connect(
@@ -121,7 +132,7 @@ async def openai_realtime():
 
         # Poczekaj 1 sekundę przed pierwszą odpowiedzią
         await asyncio.sleep(1)
-        print("Rozmowa rozpoczęta. Mów do mikrofonu...")
+        print("✅ Rozmowa rozpoczęta. Mów do mikrofonu...")
 
         audio_buffer = AudioBuffer(chunk_limit=RATE * 1)  # 1 sekunda audio
 
@@ -141,16 +152,16 @@ async def openai_realtime():
                         print(f"Asystent: {data['part']['transcript']}")
 
                 elif data['type'] == 'error':
-                    print(f"Błąd: {data['error']}")
+                    print(f"❌ Błąd: {data['error']}")
 
                 elif data['type'] == 'session.updated':
-                    print("Sesja zainicjalizowana")
+                    print("ℹ️ Sesja zainicjalizowana")
 
                 elif data['type'] == 'response.created':
-                    print("Otrzymywanie odpowiedzi...")
+                    print("🔄 Otrzymywanie odpowiedzi...")
 
         except Exception as e:
-            print(f"Błąd połączenia: {e}")
+            print(f"❌ Błąd połączenia: {e}")
         finally:
             stop_event.set()
             try:
@@ -161,7 +172,7 @@ async def openai_realtime():
 
 if __name__ == "__main__":
     if not os.getenv('OPENAI_API_KEY'):
-        print("Error: Ustaw zmienną środowiskową OPENAI_API_KEY")
+        print("❌ Error: Ustaw zmienną środowiskową OPENAI_API_KEY")
         exit(1)
 
     asyncio.run(openai_realtime())
