@@ -3,25 +3,26 @@ import websockets
 import json
 import os
 import base64
-import numpy as np
 import pyaudio
 import threading
-import queue
 from dotenv import load_dotenv
 
 load_dotenv()
+
 # Konfiguracja audio
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 24000
-CHUNK = 1024
+CHUNK = 512  # małe CHUNK dla płynnego nagrywania
 
-# Kolejki do komunikacji między wątkami
-audio_queue = queue.Queue()
+# Event do zatrzymania
 stop_event = threading.Event()
 
+# Queue do przesyłania audio między wątkiem a coroutiną
+send_queue = asyncio.Queue()
 
-# Funkcja do nagrywania audio
+
+# Wątek nagrywający audio
 def record_audio():
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT,
@@ -29,29 +30,14 @@ def record_audio():
                     rate=RATE,
                     input=True,
                     frames_per_buffer=CHUNK)
-
     print("Nagrywanie... Naciśnij Ctrl+C aby zatrzymać")
 
     try:
         while not stop_event.is_set():
-            data = stream.read(CHUNK)
-            audio_data = base64.b64encode(data).decode('utf-8')
-
-            # Wysyłanie audio przez WebSocket
-            if hasattr(record_audio, 'websocket'):
-                message = {
-                    "type": "input_audio_buffer.append",
-                    "audio": audio_data
-                }
-                asyncio.run_coroutine_threadsafe(
-                    record_audio.websocket.send(json.dumps(message)),
-                    record_audio.loop
-                )
-
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            asyncio.run_coroutine_threadsafe(send_queue.put(data), record_audio.loop)
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        print(f"Błąd nagrywania: {e}")
     finally:
         stream.stop_stream()
         stream.close()
@@ -59,31 +45,52 @@ def record_audio():
         stop_event.set()
 
 
-# Funkcja do odtwarzania audio
+# Coroutine wysyłająca audio przez WebSocket
+async def send_audio(websocket):
+    while not stop_event.is_set():
+        data = await send_queue.get()
+        audio_data = base64.b64encode(data).decode("utf-8")
+        message = {"type": "input_audio_buffer.append", "audio": audio_data}
+        try:
+            await websocket.send(json.dumps(message))
+        except Exception as e:
+            print("Błąd wysyłania audio:", e)
+
+
+# Buforowanie audio przed odtwarzaniem
+class AudioBuffer:
+    def __init__(self, chunk_limit=48000):  # ok. 2 sekundy przy 24kHz
+        self.buffer = bytearray()
+        self.chunk_limit = chunk_limit
+
+    def add(self, data):
+        self.buffer.extend(data)
+
+    def ready(self):
+        return len(self.buffer) >= self.chunk_limit
+
+    def get(self):
+        data = bytes(self.buffer)
+        self.buffer.clear()
+        return data
+
+
 def play_audio(audio_data):
     p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    output=True)
-
+    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True)
     try:
         stream.write(audio_data)
-    except Exception as e:
-        print(f"Błąd odtwarzania: {e}")
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
 
 
-# Główna funkcja do komunikacji z OpenAI
 async def openai_realtime():
     instructions_pl = (
         "Jesteś asystentem. ODPOWIADAJ WYŁĄCZNIE PO POLSKU. "
-        "Nigdy nie zmieniaj języka — nawet jeśli użytkownik użyje innego języka, "
-        "zawsze odpowiedz po polsku. Nie dodawaj wstępu ani komentarzy. "
-        "Odpowiadaj krótko i konkretnie oraz podawaj tylko to, o co prosi użytkownik."
+        "Nigdy nie zmieniaj języka — zawsze odpowiedz po polsku. "
+        "Nie dodawaj wstępu ani komentarzy. Odpowiadaj krótko i konkretnie."
     )
 
     async with websockets.connect(
@@ -103,25 +110,31 @@ async def openai_realtime():
             }
         }))
 
-        # Przekazanie websocket do wątku nagrywania
-        record_audio.websocket = websocket
+        # Start wątku nagrywania
         record_audio.loop = asyncio.get_event_loop()
-
-        # Rozpocznij wątek nagrywania
         record_thread = threading.Thread(target=record_audio)
         record_thread.daemon = True
         record_thread.start()
 
+        # Coroutine do wysyłania audio
+        asyncio.create_task(send_audio(websocket))
+
+        # Poczekaj 1 sekundę przed pierwszą odpowiedzią
+        await asyncio.sleep(1)
         print("Rozmowa rozpoczęta. Mów do mikrofonu...")
+
+        audio_buffer = AudioBuffer(chunk_limit=RATE * 1)  # 1 sekunda audio
 
         try:
             async for message in websocket:
                 data = json.loads(message)
 
                 if data['type'] == 'response.audio.delta':
-                    # Odtwarzanie otrzymanego audio
-                    audio_data = base64.b64decode(data['delta'])
-                    play_audio(audio_data)
+                    audio_bytes = base64.b64decode(data['delta'])
+                    audio_buffer.add(audio_bytes)
+
+                    if audio_buffer.ready():
+                        play_audio(audio_buffer.get())
 
                 elif data['type'] == 'response.content_part.done':
                     if 'transcript' in data['part']:
@@ -147,10 +160,8 @@ async def openai_realtime():
 
 
 if __name__ == "__main__":
-    # Sprawdzenie czy API key jest ustawione
     if not os.getenv('OPENAI_API_KEY'):
         print("Error: Ustaw zmienną środowiskową OPENAI_API_KEY")
-        print("Przykład: export OPENAI_API_KEY='twój-klucz-api'")
         exit(1)
 
     asyncio.run(openai_realtime())
