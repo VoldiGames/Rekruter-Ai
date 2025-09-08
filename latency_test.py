@@ -5,24 +5,21 @@ import os
 import base64
 import pyaudio
 import threading
+import time
+from collections import deque
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Konfiguracja audio
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 24000
-CHUNK = 512  # małe CHUNK dla płynnego nagrywania
+CHUNK = 512
 
-# Event do zatrzymania
 stop_event = threading.Event()
-
-# Queue do przesyłania audio między wątkiem a coroutiną
 send_queue = asyncio.Queue()
 
 
-# Wątek nagrywający audio
 def record_audio():
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT,
@@ -30,7 +27,7 @@ def record_audio():
                     rate=RATE,
                     input=True,
                     frames_per_buffer=CHUNK)
-    print("🎤 Nagrywanie... Naciśnij Ctrl+C aby zatrzymać")
+    print("Nagrywanie... Naciśnij Ctrl+C aby zatrzymać")
 
     try:
         while not stop_event.is_set():
@@ -38,6 +35,8 @@ def record_audio():
             asyncio.run_coroutine_threadsafe(send_queue.put(data), record_audio.loop)
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        print(f"Błąd nagrywania: {e}")
     finally:
         stream.stop_stream()
         stream.close()
@@ -45,7 +44,6 @@ def record_audio():
         stop_event.set()
 
 
-# Coroutine wysyłająca audio przez WebSocket
 async def send_audio(websocket):
     while not stop_event.is_set():
         data = await send_queue.get()
@@ -54,45 +52,66 @@ async def send_audio(websocket):
         try:
             await websocket.send(json.dumps(message))
         except Exception as e:
-            print("❌ Błąd wysyłania audio:", e)
+            print("Błąd wysyłania audio:", e)
 
 
-# Buforowanie audio przed odtwarzaniem
-class AudioBuffer:
-    def __init__(self, chunk_limit=48000):  # ok. 2 sekundy przy 24kHz
+class AudioPlayer:
+    def __init__(self, min_buffer_duration=2.0):
+        self.p = pyaudio.PyAudio()
+        self.stream = self.p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True)
         self.buffer = bytearray()
-        self.chunk_limit = chunk_limit
+        self.min_buffer_size = int(RATE * min_buffer_duration * CHANNELS * 2)  # 2 sekundy bufora
+        self.playing = False
+        self.lock = threading.Lock()
 
-    def add(self, data):
-        self.buffer.extend(data)
+    def add_audio(self, audio_data):
+        with self.lock:
+            self.buffer.extend(audio_data)
 
-    def ready(self):
-        return len(self.buffer) >= self.chunk_limit
+            # Rozpocznij odtwarzanie jeśli mamy wystarczająco duży bufor
+            if not self.playing and len(self.buffer) >= self.min_buffer_size:
+                self.playing = True
+                threading.Thread(target=self._play, daemon=True).start()
 
-    def get(self):
-        data = bytes(self.buffer)
-        self.buffer.clear()
-        return data
+    def _play(self):
+        try:
+            while self.playing and not stop_event.is_set():
+                with self.lock:
+                    # Sprawdź czy mamy wystarczająco danych do odtworzenia
+                    if len(self.buffer) < CHUNK * 2:  # 2 bajty na próbkę dla paInt16
+                        time.sleep(0.01)
+                        continue
 
+                    # Pobierz dane z bufora
+                    data = bytes(self.buffer[:CHUNK * 2])
+                    self.buffer = self.buffer[CHUNK * 2:]
 
-def play_audio(audio_data):
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True)
-    try:
-        stream.write(audio_data)
-    finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+                # Odtwórz dane
+                try:
+                    self.stream.write(data)
+                except Exception as e:
+                    print(f"Błąd odtwarzania: {e}")
+                    break
+        except Exception as e:
+            print(f"Błąd w wątku odtwarzania: {e}")
+        finally:
+            self.playing = False
+
+    def close(self):
+        self.playing = False
+        if self.stream:
+            self.stream.stop_stream()
+            self.stream.close()
+        if self.p:
+            self.p.terminate()
 
 
 async def openai_realtime():
-    # Wczytanie oferty pracy z pliku
     try:
         with open("oferta.txt", "r", encoding="utf-8") as f:
             oferta_pracy = f.read().strip()
     except FileNotFoundError:
-        print("❌ Brak pliku oferta.txt – utwórz go i wklej ofertę pracy.")
+        print("Brak pliku oferta.txt – utwórz go i wklej ofertę pracy.")
         return
 
     instructions_pl = (
@@ -104,6 +123,9 @@ async def openai_realtime():
         f"OFERTA PRACY:\n{oferta_pracy}"
     )
 
+    # Inicjalizacja odtwarzacza audio z 2-sekundowym buforem
+    audio_player = AudioPlayer(min_buffer_duration=2.0)
+
     async with websockets.connect(
             "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01",
             additional_headers={
@@ -112,7 +134,6 @@ async def openai_realtime():
             }
     ) as websocket:
 
-        # Inicjalizacja sesji
         await websocket.send(json.dumps({
             "type": "session.update",
             "session": {
@@ -121,20 +142,15 @@ async def openai_realtime():
             }
         }))
 
-        # Start wątku nagrywania
         record_audio.loop = asyncio.get_event_loop()
         record_thread = threading.Thread(target=record_audio)
         record_thread.daemon = True
         record_thread.start()
 
-        # Coroutine do wysyłania audio
         asyncio.create_task(send_audio(websocket))
 
-        # Poczekaj 1 sekundę przed pierwszą odpowiedzią
         await asyncio.sleep(1)
-        print("✅ Rozmowa rozpoczęta. Mów do mikrofonu...")
-
-        audio_buffer = AudioBuffer(chunk_limit=RATE * 1)  # 1 sekunda audio
+        print("Rozmowa rozpoczęta. Mów do mikrofonu...")
 
         try:
             async for message in websocket:
@@ -142,28 +158,26 @@ async def openai_realtime():
 
                 if data['type'] == 'response.audio.delta':
                     audio_bytes = base64.b64decode(data['delta'])
-                    audio_buffer.add(audio_bytes)
-
-                    if audio_buffer.ready():
-                        play_audio(audio_buffer.get())
+                    audio_player.add_audio(audio_bytes)
 
                 elif data['type'] == 'response.content_part.done':
                     if 'transcript' in data['part']:
                         print(f"Asystent: {data['part']['transcript']}")
 
                 elif data['type'] == 'error':
-                    print(f"❌ Błąd: {data['error']}")
+                    print(f"Błąd: {data['error']}")
 
                 elif data['type'] == 'session.updated':
-                    print("ℹ️ Sesja zainicjalizowana")
+                    print("Sesja zainicjalizowana")
 
                 elif data['type'] == 'response.created':
-                    print("🔄 Otrzymywanie odpowiedzi...")
+                    print("Otrzymywanie odpowiedzi...")
 
         except Exception as e:
-            print(f"❌ Błąd połączenia: {e}")
+            print(f"Błąd połączenia: {e}")
         finally:
             stop_event.set()
+            audio_player.close()
             try:
                 record_thread.join(timeout=1.0)
             except:
@@ -172,7 +186,13 @@ async def openai_realtime():
 
 if __name__ == "__main__":
     if not os.getenv('OPENAI_API_KEY'):
-        print("❌ Error: Ustaw zmienną środowiskową OPENAI_API_KEY")
+        print("Error: Ustaw zmienną środowiskową OPENAI_API_KEY")
         exit(1)
 
-    asyncio.run(openai_realtime())
+    try:
+        asyncio.run(openai_realtime())
+    except KeyboardInterrupt:
+        print("\nZatrzymywanie...")
+        stop_event.set()
+    except Exception as e:
+        print(f"Błąd: {e}")
