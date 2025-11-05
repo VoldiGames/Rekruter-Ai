@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}SmartHire{% endblock %}
+
+{% block content %}
+<!-- COSMIC STYLE -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Orbitron:wght@500;700&display=swap');
+
+:root {
+    --primary: #7f5af0;        /* neon fiolet */
+    --primary-hover: #9d7efc;
+    --secondary: #22d3ee;      /* neon błękit */
+    --secondary-hover: #0bc5ea;
+    --bg: #0b0c1e;             /* ciemne kosmiczne tło */
+    --text: #e0e7ff;
+    --radius: 16px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.main-container { min-height: 100vh; }
+
+/* === HERO SECTION === */
+.hero-section {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 20px;
+    min-height: 80vh;
+    background: radial-gradient(circle at 50% 20%, #0b0c1e, #000010 90%);
+}
+
+.starry-background {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.star {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    opacity: 0.7;
+    animation: twinkle 4s infinite ease-in-out alternate;
+    transition: box-shadow 0.4s ease, transform 0.3s ease, opacity 0.3s ease;
+}
+
+.star:hover {
+    box-shadow: 0 0 12px 6px rgba(180, 230, 255, 0.9),
+                0 0 50px 15px rgba(180, 220, 255, 0.4);
+    transform: scale(2);
+    opacity: 1;
+}
+
+@keyframes twinkle {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(1.4); }
+}
+
+.nebula {
+    position: absolute;
+    width: 150%;
+    height: 150%;
+    top: -25%;
+    left: -25%;
+    background: radial-gradient(circle at 30% 30%, rgba(127, 90, 240, 0.2), transparent 50%),
+                radial-gradient(circle at 70% 70%, rgba(34, 211, 238, 0.15), transparent 50%);
+    filter: blur(120px);
+    animation: nebulaMove 80s linear infinite;
+}
+
+@keyframes nebulaMove {
+    0% { transform: translate(0,0) rotate(0deg); }
+    50% { transform: translate(70px,-50px) rotate(45deg); }
+    100% { transform: translate(0,0) rotate(0deg); }
+}
+
+/* === HERO CARDS === */
+.cards-container {
+    display: flex;
+    gap: 40px;
+    max-width: 1200px;
+    width: 100%;
+    justify-content: center;
+    align-items: stretch;
+    position: relative;
+    z-index: 2;
+}
+
+.card {
+    background: rgba(10, 10, 30, 0.95);
+    backdrop-filter: blur(12px);
+    padding: 60px 40px;
+    border-radius: var(--radius);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    flex: 1;
+    max-width: 500px;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    opacity: 0;
+    transform: translateY(50px) scale(0.95);
+    transition: all 0.8s ease-out;
+}
+
+.card.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.card h2 {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--primary);
+    font-size: 2.4rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.card p {
+    font-size: 1.15rem;
+    color: var(--text);
+    line-height: 1.6;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.button-group { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+
+a.button {
+    display: inline-block;
+    color: white;
+    text-decoration: none;
+    padding: 16px 36px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 1.1rem;
+    text-align: center;
+    min-width: 200px;
+    transition: all 0.25s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.button-primary {
+    background: var(--primary);
+    animation: pulsePurple 3s ease-in-out infinite;
+}
+
+.button-primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(127, 90, 240, 0.7);
+}
+
+.button-secondary {
+    background: var(--secondary);
+    animation: pulseBlue 3s ease-in-out infinite;
+}
+
+.button-secondary:hover {
+    background: var(--secondary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(34, 211, 238, 0.7);
+}
+
+/* === WHY US SECTION === */
+.why-us-section {
+    background: rgba(10, 10, 30, 0.95);
+    padding: 80px 20px;
+    backdrop-filter: blur(20px);
+    opacity: 0;
+    transform: translateY(50px);
+    transition: all 0.8s ease-out;
+}
+
+.why-us-section.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.why-us-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.why-us-title {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--primary);
+    font-size: 2.6rem;
+    font-weight: 700;
+    margin-bottom: 50px;
+}
+
+.features-list {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.feature-item {
+    background: rgba(20, 20, 40, 0.9);
+    padding: 40px 30px;
+    border-radius: var(--radius);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    transition: transform 0.6s ease, box-shadow 0.6s ease, opacity 0.6s ease;
+    display: flex;
+    align-items: flex-start;
+    gap: 25px;
+    text-align: left;
+    opacity: 0;
+    transform: translateY(50px);
+}
+
+.feature-item.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.feature-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.feature-content { flex: 1; }
+
+.feature-title {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--text);
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.feature-description {
+    color: #cbd5e1;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+/* === ANIMATIONS === */
+@keyframes pulsePurple {
+    0%, 100% { transform: scale(1); box-shadow: 0 4px 12px rgba(127, 90, 240, 0.4); }
+    50% { transform: scale(1.05); box-shadow: 0 6px 18px rgba(127, 90, 240, 0.7); }
+}
+
+@keyframes pulseBlue {
+    0%, 100% { transform: scale(1); box-shadow: 0 4px 12px rgba(34, 211, 238, 0.4); }
+    50% { transform: scale(1.05); box-shadow: 0 6px 18px rgba(34, 211, 238, 0.7); }
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+    .cards-container { flex-direction: column; align-items: center; gap: 30px; }
+    .card { padding: 40px 30px; max-width: 500px; min-height: 350px; }
+    .card h2 { font-size: 2rem; }
+    .button-group { flex-direction: column; align-items: center; }
+    a.button { width: 100%; max-width: 280px; }
+    .why-us-title { font-size: 2rem; }
+    .feature-item { flex-direction: column; text-align: center; gap: 20px; }
+}
+
+@media (max-width: 480px) {
+    .hero-section { padding: 40px 15px; min-height: auto; }
+    .card { padding: 30px 20px; min-height: 300px; }
+    .why-us-section { padding: 60px 15px; }
+    .feature-item { padding: 30px 20px; }
+    .card h2 { font-size: 1.6rem; }
+    .card p { font-size: 1rem; }
+}
+</style>
+
+<div class="main-container">
+    <!-- HERO -->
+    <section class="hero-section">
+        <div class="starry-background" id="stars"></div>
+        <div class="nebula"></div>
+
+        <div class="cards-container">
+            <div class="card card-left">
+                <h2>Zobacz jak działamy</h2>
+                <p>Sprawdź nasze systemy analizy CV i połączeń telefonicznych za darmo i w kilka sekund!</p>
+                <div class="button-group">
+                    <a href="{% url 'call_check_cv' %}" class="button button-primary">🚀 Przetestuj</a>
+                </div>
+            </div>
+
+            <div class="card card-right">
+                <h2>Znajdź pracowników</h2>
+                <p>Perfekcyjne dopasowania dzięki zaawansowanej analizie AI. Zautomatyzuj proces selekcji CV.</p>
+                <div class="button-group">
+                    <a href="{% url 'offer_form' %}" class="button button-secondary">👥 Rekrutuj</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- WHY US -->
+    <section class="why-us-section">
+        <div class="why-us-container">
+            <h2 class="why-us-title">Dlaczego warto wybrać SmartHire?</h2>
+            <div class="features-list">
+                <div class="feature-item">
+                    <div class="feature-content">
+                        <h3 class="feature-title">Zaawansowana AI</h3>
+                        <p class="feature-description">Wykorzystujemy najnowocześniejsze algorytmy sztucznej inteligencji do analizy CV i dopasowania kandydatów do wymagań stanowiska.</p>
+                    </div>
+                </div>
+
+                <div class="feature-item">
+                    <div class="feature-content">
+                        <h3 class="feature-title">Szybka analiza</h3>
+                        <p class="feature-description">Oszczędzaj czas dzięki błyskawicznej analizie dokumentów. Nasz system przetwarza CV w kilka sekund.</p>
+                    </div>
+                </div>
+
+                <div class="feature-item">
+                    <div class="feature-content">
+                        <h3 class="feature-title">Precyzyjne dopasowanie</h3>
+                        <p class="feature-description">Inteligentne dopasowanie kandydatów do profilu stanowiska z uwzględnieniem umiejętności, doświadczenia i kompetencji.</p>
+                    </div>
+                </div>
+
+                <div class="feature-item">
+                    <div class="feature-content">
+                        <h3 class="feature-title">Bezpieczeństwo danych</h3>
+                        <p class="feature-description">Twoje dane są w bezpiecznych rękach. Stosujemy najwyższe standardy ochrony i szyfrowania informacji.</p>
+                    </div>
+                </div>
+
+                <div class="feature-item">
+                    <div class="feature-content">
+                        <h3 class="feature-title">Szczegółowe raporty</h3>
+                        <p class="feature-description">Otrzymuj szczegółowe analizy i rekomendacje wspierające proces decyzyjny w rekrutacji.</p>
+                    </div>
+                </div>
+
+                <div class="feature-item">
+                    <div class="feature-content">
+                        <h3 class="feature-title">Dla firm każdej wielkości</h3>
+                        <p class="feature-description">SmartHire dopasowuje się do potrzeb zarówno małych firm,
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- === JAVASCRIPT === -->
+<script>
+// === STAR GENERATOR ===
+const starsContainer = document.getElementById('stars');
+const numStars = 120; // większe gwiazdy
+
+for (let i = 0; i < numStars; i++) {
+    const star = document.createElement('div');
+    star.classList.add('star');
+    const size = Math.random() * 4 + 3; // większe gwiazdki
+    star.style.width = `${size}px`;
+    star.style.height = `${size}px`;
+    star.style.top = `${Math.random() * 100}%`;
+    star.style.left = `${Math.random() * 100}%`;
+    star.style.animationDuration = `${Math.random() * 3 + 2}s`;
+    starsContainer.appendChild(star);
+}
+
+// === SCROLL ANIMATIONS ===
+const observerOptions = {
+    threshold: 0.2
+};
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if(entry.isIntersecting){
+            entry.target.classList.add('visible');
+        }
+    });
+}, observerOptions);
+
+document.querySelectorAll('.card, .feature-item, .why-us-section').forEach(el => {
+    observer.observe(el);
+});
+</script>
+{% endblock %}
